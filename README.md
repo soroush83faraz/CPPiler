@@ -2,6 +2,8 @@
 
 A compiler front-end for a small subset of C++, written in Python. It tokenizes a C++ program, checks it against an LL(1) grammar using a non-recursive predictive parser, builds a parse tree, and renders the tree as an image with Graphviz.
 
+**Try it in your browser:** https://soroush83faraz.github.io/CPPiler/ — the playground runs the repository's actual Python modules in your browser via [Pyodide](https://pyodide.org/) (no install needed; the Graphviz PNG stage is replaced by a text rendering of the parse tree).
+
 ## Pipeline
 
 1. **Lexical analysis** (`LexicalAnalyzer.py`) — regex-based tokenizer that classifies input into reserved words, identifiers, numbers, strings, and symbols. It also performs two lightweight checks before parsing: missing-semicolon detection (with line numbers) and simple type-mismatch detection on assignments (e.g. assigning a float or string literal to an `int` variable).
@@ -102,5 +104,7 @@ If the input has a missing semicolon or a bad assignment (e.g. `int x = 2.5;`), 
 | `NonRecursivePredictiveParser.py` | Stack-based predictive parser |
 | `ParseTree.py` | Parse-tree construction and Graphviz rendering |
 | `SearchInTree.py` | Finds an identifier's declaration in the parse tree |
+| `web_pipeline.py` | Importable `run_pipeline(code)` helper that runs the whole pipeline and captures each stage's output (used by the browser playground; also works from the command line) |
+| `docs/` | The in-browser playground (GitHub Pages + Pyodide); `docs/py/` holds copies of the modules served to the browser |
 | `parse_tree.png` | Sample rendered parse tree |
 | `time complexity.pdf` | Notes on the time complexity of the implementation |

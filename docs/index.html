@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPPiler Playground</title>
+<meta name="description" content="Run CPPiler — a Python compiler front-end for a C++ subset — directly in your browser via Pyodide.">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #1c2128;
+    --muted: #59626e;
+    --border: #d4d9e0;
+    --accent: #0b5fa5;
+    --accent-text: #ffffff;
+    --error: #b32d2d;
+    --ok: #1a7f37;
+    --tab-active-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --panel: #1d2229;
+      --text: #dfe4ea;
+      --muted: #9aa4b1;
+      --border: #333b46;
+      --accent: #4da3e0;
+      --accent-text: #10141a;
+      --error: #ff7b72;
+      --ok: #56d364;
+      --tab-active-bg: #1d2229;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-monospace, "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.45;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 1.25rem 1rem 2rem; }
+  header h1 { margin: 0 0 .25rem; font-size: 1.35rem; }
+  header p { margin: 0 0 1rem; color: var(--muted); font-size: .85rem; }
+  .grid { display: grid; grid-template-columns: minmax(280px, 480px) 1fr; gap: 1rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .5rem .75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: .8rem; color: var(--muted);
+  }
+  textarea {
+    width: 100%; min-height: 380px; resize: vertical;
+    border: 0; outline: none; padding: .75rem;
+    background: var(--panel); color: var(--text);
+    font: inherit; font-size: .85rem; tab-size: 4;
+    display: block;
+  }
+  button.run {
+    margin-left: auto;
+    background: var(--accent); color: var(--accent-text);
+    border: 0; border-radius: 6px;
+    padding: .35rem 1.1rem;
+    font: inherit; font-weight: 700; font-size: .85rem;
+    cursor: pointer;
+  }
+  button.run:disabled { opacity: .45; cursor: wait; }
+  #status { font-size: .8rem; color: var(--muted); margin: .6rem 0 0; min-height: 1.2em; }
+  #status.err { color: var(--error); }
+  #status.ok { color: var(--ok); }
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel) 60%, var(--bg));
+  }
+  .tabs button {
+    border: 0; border-right: 1px solid var(--border);
+    background: transparent; color: var(--muted);
+    padding: .45rem .8rem; font: inherit; font-size: .78rem; cursor: pointer;
+  }
+  .tabs button.active {
+    background: var(--tab-active-bg); color: var(--text); font-weight: 700;
+  }
+  .tabs button.has-errors { color: var(--error); }
+  .out {
+    display: none;
+    margin: 0; padding: .75rem;
+    font-size: .78rem;
+    overflow: auto;
+    max-height: 560px;
+    white-space: pre;
+  }
+  .out.active { display: block; }
+  .out:empty::before { content: "Press Run to see this stage's output."; color: var(--muted); }
+  #overlay {
+    position: fixed; inset: 0;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .9rem; z-index: 10; text-align: center; padding: 1rem;
+  }
+  #overlay.hidden { display: none; }
+  .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 4px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #overlay .note { color: var(--muted); font-size: .8rem; max-width: 34rem; }
+  footer {
+    margin-top: 1.5rem; padding-top: .75rem;
+    border-top: 1px solid var(--border);
+    font-size: .78rem; color: var(--muted);
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div class="spinner" aria-hidden="true"></div>
+  <div id="overlay-msg">Loading Python runtime (Pyodide)&hellip;</div>
+  <div class="note">The first visit downloads the Python interpreter (~10&nbsp;seconds on a decent connection). It is cached afterwards.</div>
+</div>
+
+<div class="wrap">
+  <header>
+    <h1>CPPiler Playground</h1>
+    <p>Type a program in the supported C++ subset and run the real compiler front-end pipeline &mdash; lexer, token table, LL(1) parse table, predictive parser, parse tree &mdash; right here in your browser.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-head">
+        <span>input.cpp</span>
+        <button class="run" id="run" disabled>Run &#9654;</button>
+      </div>
+      <textarea id="code" spellcheck="false" aria-label="C++ subset source code"></textarea>
+    </section>
+
+    <section class="panel">
+      <div class="tabs" id="tabs" role="tablist">
+        <button data-tab="tokens" class="active">Tokens</button>
+        <button data-tab="token_table">Token table</button>
+        <button data-tab="first_follow">FIRST / FOLLOW</button>
+        <button data-tab="parse_table">Parse table</button>
+        <button data-tab="derivation">Derivation</button>
+        <button data-tab="tree">Parse tree</button>
+        <button data-tab="declarations">Declarations</button>
+        <button data-tab="errors" id="tab-errors">Errors</button>
+      </div>
+      <pre class="out active" id="out-tokens"></pre>
+      <pre class="out" id="out-token_table"></pre>
+      <pre class="out" id="out-first_follow"></pre>
+      <pre class="out" id="out-parse_table"></pre>
+      <pre class="out" id="out-derivation"></pre>
+      <pre class="out" id="out-tree"></pre>
+      <pre class="out" id="out-declarations"></pre>
+      <pre class="out" id="out-errors"></pre>
+    </section>
+  </div>
+
+  <p id="status"></p>
+
+  <footer>
+    <a href="https://github.com/soroush83faraz/CPPiler">soroush83faraz/CPPiler</a> &mdash;
+    this playground runs the repository's actual Python modules in your browser via
+    <a href="https://pyodide.org/">Pyodide</a>. The graphviz PNG stage is skipped;
+    the parse tree is rendered as text instead. Tip: Ctrl+Enter runs the code.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+"use strict";
+
+var SAMPLE_CODE = [
+  "#include <iostream>",
+  "using namespace std;",
+  "int main(){",
+  "    int x;",
+  "    int s=0, t=10;",
+  "    while (t >= 0){",
+  "        cin>>x;",
+  "        t = t - 1;",
+  "        s = s + x;",
+  "    }",
+  "    cout<<\"sum=\"<<s;",
+  "    return 0;",
+  "}"
+].join("\n");
+
+var MODULES = [
+  "LexicalAnalyzer.py",
+  "TokenTable.py",
+  "ParseTable.py",
+  "NonRecursivePredictiveParser.py",
+  "ParseTree.py",
+  "SearchInTree.py",
+  "web_pipeline.py"
+];
+
+var OUTPUT_KEYS = ["tokens", "token_table", "first_follow", "parse_table",
+                   "derivation", "tree", "declarations"];
+
+var pyodide = null;
+var codeEl = document.getElementById("code");
+var runBtn = document.getElementById("run");
+var statusEl = document.getElementById("status");
+var overlayEl = document.getElementById("overlay");
+var overlayMsgEl = document.getElementById("overlay-msg");
+var errorsTabBtn = document.getElementById("tab-errors");
+
+codeEl.value = SAMPLE_CODE;
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg || "";
+  statusEl.className = cls || "";
+}
+
+function activateTab(name) {
+  var buttons = document.querySelectorAll("#tabs button");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].classList.toggle("active", buttons[i].dataset.tab === name);
+  }
+  var panes = document.querySelectorAll(".out");
+  for (var j = 0; j < panes.length; j++) {
+    panes[j].classList.toggle("active", panes[j].id === "out-" + name);
+  }
+}
+
+document.getElementById("tabs").addEventListener("click", function (ev) {
+  var btn = ev.target.closest("button");
+  if (btn) activateTab(btn.dataset.tab);
+});
+
+async function boot() {
+  overlayMsgEl.textContent = "Loading Python runtime (Pyodide)…";
+  pyodide = await loadPyodide();
+
+  overlayMsgEl.textContent = "Fetching CPPiler modules…";
+  for (var i = 0; i < MODULES.length; i++) {
+    var name = MODULES[i];
+    var resp = await fetch("py/" + name, { cache: "no-cache" });
+    if (!resp.ok) {
+      throw new Error("Could not fetch py/" + name + " (HTTP " + resp.status + ")");
+    }
+    var text = await resp.text();
+    pyodide.FS.writeFile("/home/pyodide/" + name, text);
+  }
+
+  overlayMsgEl.textContent = "Importing the pipeline…";
+  await pyodide.runPythonAsync("import web_pipeline");
+
+  overlayEl.classList.add("hidden");
+  runBtn.disabled = false;
+  setStatus("Ready. Edit the code and press Run.", "ok");
+}
+
+async function run() {
+  if (!pyodide) return;
+  runBtn.disabled = true;
+  setStatus("Running the pipeline…");
+  try {
+    pyodide.globals.set("__playground_source", codeEl.value);
+    var raw = await pyodide.runPythonAsync(
+      "web_pipeline.run_pipeline_json(__playground_source)"
+    );
+    var res = JSON.parse(raw);
+
+    for (var i = 0; i < OUTPUT_KEYS.length; i++) {
+      var key = OUTPUT_KEYS[i];
+      document.getElementById("out-" + key).textContent = res[key] || "";
+    }
+
+    var errPane = document.getElementById("out-errors");
+    if (res.errors && res.errors.length) {
+      errPane.textContent = res.errors.join("\n") +
+        (res.log ? "\n\n" + res.log : "");
+      errorsTabBtn.classList.add("has-errors");
+      activateTab("errors");
+      setStatus("Finished with " + res.errors.length + " error(s) — see the Errors tab.", "err");
+    } else {
+      errPane.textContent = "No errors found!";
+      errorsTabBtn.classList.remove("has-errors");
+      setStatus(res.log ? res.log.replace(/\n/g, "  |  ") : "Done.", "ok");
+    }
+  } catch (e) {
+    document.getElementById("out-errors").textContent =
+      "Unexpected failure while running the pipeline:\n\n" + (e && e.message ? e.message : String(e));
+    errorsTabBtn.classList.add("has-errors");
+    activateTab("errors");
+    setStatus("Unexpected failure — see the Errors tab.", "err");
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+runBtn.addEventListener("click", run);
+codeEl.addEventListener("keydown", function (ev) {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter" && !runBtn.disabled) {
+    ev.preventDefault();
+    run();
+  }
+});
+
+boot().catch(function (e) {
+  overlayEl.classList.add("hidden");
+  setStatus("Failed to load the Python runtime: " +
+    (e && e.message ? e.message : String(e)) +
+    " — check your connection and reload.", "err");
+});
+</script>
+</body>
+</html>
